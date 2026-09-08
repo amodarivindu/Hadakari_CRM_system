@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Designs — Hedakari Clothing CRM</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <h1>Designs</h1>
+  <p class="subtitle">Your catalog. Log a new design whenever one is finalized and ready to show to shops.</p>
+
+  <div class="two-col">
+    <div class="card">
+      <h2>Add a design</h2>
+      <form class="entry-form" id="designForm">
+        <div><label>Design name</label><input name="name" required></div>
+        <div><label>Design code</label><input name="code" placeholder="e.g. D-1042"></div>
+        <div><label>Category</label>
+          <select name="category">
+            <option value="">Select…</option>
+            <option value="T-Shirt">T-Shirt</option>
+            <option value="Long Frock">Long Frock</option>
+            <option value="Short Frock">Short Frock</option>
+            <option value="Two Piece Kit">Two Piece Kit</option>
+            <option value="Crop Top">Crop Top</option>
+            <option value="Baby Frock">Baby Frock</option>
+          </select>
+        </div>
+        <div>
+          <label>Design image</label>
+          <input type="file" name="image" accept="image/*">
+          <img id="imgPreview" style="display:none; margin-top:8px; width:120px; height:120px; object-fit:cover; border-radius:6px; border:1px solid var(--gridline);">
+        </div>
+        <button type="submit">Add design</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>All designs</h2>
+      <div id="designTable"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { Store, resizeImageFile, showConnectionError } from './assets/store.js';
+import { renderNav } from './assets/nav.js';
+
+renderNav('designs.html');
+try{ await Store.refresh(); }
+catch(err){ showConnectionError(err); throw err; }
+
+function renderTable(){
+  const el = document.getElementById('designTable');
+  if(!Store.cache.designs.length){ el.innerHTML = '<div class="empty">No designs yet.</div>'; return; }
+  el.innerHTML = `
+    <div class="table-scroll"><table><thead><tr><th>Image</th><th>Name</th><th>Code</th><th>Category</th><th>Uploaded</th></tr></thead><tbody>
+    ${Store.cache.designs.slice().reverse().map(d => `<tr><td>${d.imageDataUrl ? `<img src="${d.imageDataUrl}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td></tr>`).join('')}
+    </tbody></table></div>
+  `;
+}
+renderTable();
+
+const imageInput = document.querySelector('input[name="image"]');
+const imgPreview = document.getElementById('imgPreview');
+imageInput.addEventListener('change', () => {
+  if(!imageInput.files[0]){ imgPreview.style.display = 'none'; return; }
+  const reader = new FileReader();
+  reader.onload = () => { imgPreview.src = reader.result; imgPreview.style.display = 'block'; };
+  reader.readAsDataURL(imageInput.files[0]);
+});
+
+const form = document.getElementById('designForm');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  try{
+    let imageDataUrl = '';
+    if(imageInput.files[0]){
+      imageDataUrl = await resizeImageFile(imageInput.files[0], 400, 0.75);
+    }
+    await Store.addDesign(f.get('name').trim(), f.get('code').trim(), f.get('category').trim(), imageDataUrl);
+    e.target.reset();
+    imgPreview.style.display = 'none';
+    renderTable();
+  }catch(err){
+    alert('Could not add design: ' + err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

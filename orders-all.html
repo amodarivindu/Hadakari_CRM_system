@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All Orders — Hedakari Clothing CRM</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <h1>All orders</h1>
+  <p class="subtitle">Every order from visits and WhatsApp together — mark each one complete once the factory has sent it out.</p>
+
+  <div class="card" style="margin-bottom:24px;">
+    <h2>Orders</h2>
+    <div id="allOrdersTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>Shops with no orders yet</h2>
+    <p class="subtitle" style="margin-bottom:14px;">Shops that have never placed an order, from either channel.</p>
+    <div id="noOrderShops"></div>
+  </div>
+</main>
+
+<script type="module">
+import { Store, Dashboard, fmtMoney, showConnectionError } from './assets/store.js';
+import { renderNav } from './assets/nav.js';
+
+renderNav('orders-all.html');
+try{ await Store.refresh(); }
+catch(err){ showConnectionError(err); throw err; }
+
+function renderOrders(){
+  const el = document.getElementById('allOrdersTable');
+  const rows = Store.cache.orders.slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  if(!rows.length){ el.innerHTML = '<div class="empty">No orders logged yet.</div>'; return; }
+  el.innerHTML = `
+    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Source</th><th>Designs</th><th>Total</th><th>Status</th></tr></thead><tbody>
+    ${rows.map(o => `<tr>
+      <td>${o.date||'—'}</td>
+      <td>${Store.shopName(o.shopId)}</td>
+      <td>${Store.repName(o.repId)}</td>
+      <td>${o.source==='visit'?'Visit':'WhatsApp'}</td>
+      <td>${(o.items||[]).map(it => `${Store.designCode(it.designId)} ×${it.qty}`).join(', ') || '—'}</td>
+      <td>${fmtMoney(o.total)}</td>
+      <td><button class="sent-toggle ${o.sent?'is-sent':'is-pending'}" data-id="${o.id}">${o.sent ? '✓ Completed' : 'Not completed'}</button></td>
+    </tr>`).join('')}
+    </tbody></table></div>
+  `;
+  el.querySelectorAll('.sent-toggle').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const order = Store.cache.orders.find(o => o.id === id);
+      btn.disabled = true;
+      try{
+        await Store.setOrderSent(id, !order.sent);
+        renderOrders();
+      }catch(err){
+        alert('Could not update status: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+renderOrders();
+
+function renderNoOrderShops(){
+  const el = document.getElementById('noOrderShops');
+  const shops = Dashboard.shopsWithoutOrders();
+  if(!shops.length){ el.innerHTML = '<div class="empty">Every shop has placed at least one order.</div>'; return; }
+  el.innerHTML = `
+    <div class="table-scroll"><table><thead><tr><th>Shop</th><th>Contact</th><th>Phone</th><th>Area</th></tr></thead><tbody>
+    ${shops.map(s => `<tr><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td></tr>`).join('')}
+    </tbody></table></div>
+  `;
+}
+renderNoOrderShops();
+</script>
+</body>
+</html>

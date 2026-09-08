@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reps — Hedakari Clothing CRM</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <h1>Sales reps</h1>
+  <p class="subtitle">Your field team. Reps are attributed to visits, WhatsApp sends, and orders.</p>
+
+  <div class="two-col">
+    <div class="card">
+      <h2>Add a rep</h2>
+      <form class="entry-form" id="repForm">
+        <div><label>Name</label><input name="name" required></div>
+        <div><label>Phone</label><input name="phone"></div>
+        <button type="submit">Add rep</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>All reps</h2>
+      <div id="repTable"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { Store, showConnectionError } from './assets/store.js';
+import { renderNav } from './assets/nav.js';
+
+renderNav('reps.html');
+try{ await Store.refresh(); }
+catch(err){ showConnectionError(err); throw err; }
+
+function renderTable(){
+  const el = document.getElementById('repTable');
+  if(!Store.cache.reps.length){ el.innerHTML = '<div class="empty">No reps yet.</div>'; return; }
+  el.innerHTML = `
+    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Phone</th><th>Added</th></tr></thead><tbody>
+    ${Store.cache.reps.map(r => `<tr><td>${r.name}</td><td>${r.phone||'—'}</td><td>${r.createdAt}</td></tr>`).join('')}
+    </tbody></table></div>
+  `;
+}
+renderTable();
+
+const form = document.getElementById('repForm');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  try{
+    await Store.addRep(f.get('name').trim(), f.get('phone').trim());
+    e.target.reset();
+    renderTable();
+  }catch(err){
+    alert('Could not add rep: ' + err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

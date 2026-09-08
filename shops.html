@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shops — Hedakari Clothing CRM</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <h1>Shops</h1>
+  <p class="subtitle">Your wholesale customers — the shops your reps visit and message.</p>
+
+  <div class="two-col">
+    <div class="card">
+      <h2>Add a shop</h2>
+      <form class="entry-form" id="shopForm">
+        <div><label>Shop name</label><input name="name" required></div>
+        <div><label>Contact name</label><input name="contactName"></div>
+        <div><label>Phone</label><input name="phone"></div>
+        <div><label>Area / city</label><input name="area"></div>
+        <button type="submit">Add shop</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>All shops</h2>
+      <div id="shopTable"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { Store, Dashboard, showConnectionError } from './assets/store.js';
+import { renderNav } from './assets/nav.js';
+
+renderNav('shops.html');
+try{ await Store.refresh(); }
+catch(err){ showConnectionError(err); throw err; }
+
+function renderTable(){
+  const el = document.getElementById('shopTable');
+  if(!Store.cache.shops.length){ el.innerHTML = '<div class="empty">No shops yet.</div>'; return; }
+  el.innerHTML = `
+    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Contact</th><th>Phone</th><th>Area</th><th>Last activity</th></tr></thead><tbody>
+    ${Store.cache.shops.map(s => `<tr><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td><td>${Dashboard.shopLastActivity(s.id)}</td></tr>`).join('')}
+    </tbody></table></div>
+  `;
+}
+renderTable();
+
+const form = document.getElementById('shopForm');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  try{
+    await Store.addShop(f.get('name').trim(), f.get('contactName').trim(), f.get('phone').trim(), f.get('area').trim());
+    e.target.reset();
+    renderTable();
+  }catch(err){
+    alert('Could not add shop: ' + err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

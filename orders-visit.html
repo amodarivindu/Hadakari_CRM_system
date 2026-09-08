@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visit Orders — Hedakari Clothing CRM</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <h1>Visit orders</h1>
+  <p class="subtitle">Log an order taken in person during a shop visit — this also records the visit itself.</p>
+
+  <div class="two-col">
+    <div class="card">
+      <h2>Log a visit order</h2>
+      <form class="entry-form" id="orderForm">
+        <div><label>Rep</label><select name="repId" required></select></div>
+        <div><label>Shop</label><select name="shopId" required></select></div>
+        <div><label>Date</label><input type="date" name="date" required></div>
+        <div>
+          <label>Items</label>
+          <div id="itemRows"></div>
+          <button type="button" class="add-item-btn" id="addItemBtn">+ Add item</button>
+        </div>
+        <div class="sub" id="orderTotal">Total: Rs 0</div>
+        <div><label>Visit notes (optional)</label><textarea name="notes" rows="2"></textarea></div>
+        <button type="submit">Log order</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Recent visit orders</h2>
+      <div id="orderTable"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { Store, todayISO, fmtMoney, showConnectionError } from './assets/store.js';
+import { renderNav } from './assets/nav.js';
+
+renderNav('orders-visit.html');
+try{ await Store.refresh(); }
+catch(err){ showConnectionError(err); throw err; }
+
+function fillSelect(name, items){
+  const sel = document.querySelector(`select[name="${name}"]`);
+  sel.innerHTML = '<option value="">Select…</option>' + items.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+}
+fillSelect('repId', Store.cache.reps);
+fillSelect('shopId', Store.cache.shops);
+document.querySelector('input[name="date"]').value = todayISO();
+
+const itemRows = document.getElementById('itemRows');
+
+function addItemRow(){
+  const row = document.createElement('div');
+  row.className = 'item-row';
+  row.innerHTML = `
+    <select class="item-design">${Store.cache.designs.map(d => `<option value="${d.id}">${d.code || d.name || 'Unnamed design'}</option>`).join('') || '<option value="">No designs yet</option>'}</select>
+    <input class="item-qty" type="number" min="1" placeholder="Qty" value="1">
+    <input class="item-price" type="number" min="0" placeholder="Price">
+    <button type="button" class="removeItemBtn">✕</button>
+  `;
+  row.querySelector('.removeItemBtn').addEventListener('click', () => { row.remove(); updateTotal(); });
+  row.querySelector('.item-qty').addEventListener('input', updateTotal);
+  row.querySelector('.item-price').addEventListener('input', updateTotal);
+  itemRows.appendChild(row);
+}
+document.getElementById('addItemBtn').addEventListener('click', addItemRow);
+addItemRow();
+
+function updateTotal(){
+  let total = 0;
+  itemRows.querySelectorAll('.item-row').forEach(row => {
+    const qty = Number(row.querySelector('.item-qty').value) || 0;
+    const price = Number(row.querySelector('.item-price').value) || 0;
+    total += qty * price;
+  });
+  document.getElementById('orderTotal').textContent = 'Total: ' + fmtMoney(total);
+}
+
+function renderTable(){
+  const el = document.getElementById('orderTable');
+  const rows = Store.cache.orders.filter(o => o.source === 'visit').slice().sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,30);
+  if(!rows.length){ el.innerHTML = '<div class="empty">No visit orders logged yet.</div>'; return; }
+  el.innerHTML = `
+    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Total</th><th>Status</th></tr></thead><tbody>
+    ${rows.map(o => `<tr>
+      <td>${o.date||'—'}</td><td>${Store.shopName(o.shopId)}</td><td>${Store.repName(o.repId)}</td><td>${fmtMoney(o.total)}</td>
+      <td><button class="sent-toggle ${o.sent?'is-sent':'is-pending'}" data-id="${o.id}">${o.sent ? '✓ Completed' : 'Not completed'}</button></td>
+    </tr>`).join('')}
+    </tbody></table></div>
+  `;
+  el.querySelectorAll('.sent-toggle').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const order = Store.cache.orders.find(o => o.id === id);
+      btn.disabled = true;
+      try{
+        await Store.setOrderSent(id, !order.sent);
+        renderTable();
+      }catch(err){
+        alert('Could not update status: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+renderTable();
+
+const form = document.getElementById('orderForm');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  if(!f.get('repId') || !f.get('shopId')){ alert('Add a rep and a shop first (on their own pages) before logging an order.'); return; }
+  const items = Array.from(itemRows.querySelectorAll('.item-row')).map(row => ({
+    designId: row.querySelector('.item-design').value,
+    qty: Number(row.querySelector('.item-qty').value) || 0,
+    price: Number(row.querySelector('.item-price').value) || 0
+  })).filter(it => it.designId && it.qty > 0);
+  if(!items.length){ alert('Add at least one item with a quantity.'); return; }
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try{
+    await Store.addOrder(f.get('shopId'), f.get('repId'), 'visit', f.get('date'), items);
+    await Store.addVisit(f.get('shopId'), f.get('repId'), f.get('date'), f.get('notes').trim());
+    e.target.reset();
+    document.querySelector('input[name="date"]').value = todayISO();
+    itemRows.innerHTML = '';
+    addItemRow();
+    updateTotal();
+    renderTable();
+  }catch(err){
+    alert('Could not log order: ' + err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
