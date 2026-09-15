@@ -19,7 +19,10 @@
         <div><label>Shop</label><select name="shopId" required></select></div>
         <div><label>Date</label><input type="date" name="date" required></div>
         <div>
-          <label>Items</label>
+          <label style="font-weight:400;"><input type="checkbox" id="splitToggle"> Split delivery — some items ready now, rest to be made</label>
+        </div>
+        <div>
+          <label>Items <span id="itemsHint" class="sub" style="display:none;">Enter the total qty ordered, and how many are ready to deliver now — the rest becomes a linked "to be made" order.</span></label>
           <div id="itemRows"></div>
           <button type="button" class="add-item-btn" id="addItemBtn">+ Add item</button>
         </div>
@@ -35,12 +38,22 @@
 </main>
 
 <script type="module">
-import { Store, todayISO, fmtMoney, showConnectionError } from './assets/store.js';
+import { Store, todayISO, fmtMoney, showConnectionError, deliveryPartHtml, orderTimestamp } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 
-renderNav('orders-whatsapp.html');
-try{ await Store.refresh(); }
-catch(err){ showConnectionError(err); throw err; }
+try{
+  await Store.initAuth();
+  renderNav('orders-whatsapp.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+  await Store.refresh();
+}
+catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
 
 function fillSelect(name, items){
   const sel = document.querySelector(`select[name="${name}"]`);
@@ -51,14 +64,17 @@ fillSelect('shopId', Store.cache.shops);
 document.querySelector('input[name="date"]').value = todayISO();
 
 const itemRows = document.getElementById('itemRows');
+const splitToggle = document.getElementById('splitToggle');
+const itemsHint = document.getElementById('itemsHint');
 
 function addItemRow(){
   const row = document.createElement('div');
-  row.className = 'item-row';
+  row.className = 'item-row' + (splitToggle.checked ? ' split-row' : '');
   row.innerHTML = `
     <select class="item-design">${Store.cache.designs.map(d => `<option value="${d.id}">${d.code || d.name || 'Unnamed design'}</option>`).join('') || '<option value="">No designs yet</option>'}</select>
-    <input class="item-qty" type="number" min="1" placeholder="Qty" value="1">
+    <input class="item-qty" type="number" min="1" placeholder="Qty ordered" value="1">
     <input class="item-price" type="number" min="0" placeholder="Price">
+    <input class="item-qty-now" type="number" min="0" placeholder="Ready now">
     <button type="button" class="removeItemBtn">✕</button>
   `;
   row.querySelector('.removeItemBtn').addEventListener('click', () => { row.remove(); updateTotal(); });
@@ -68,6 +84,11 @@ function addItemRow(){
 }
 document.getElementById('addItemBtn').addEventListener('click', addItemRow);
 addItemRow();
+
+splitToggle.addEventListener('change', () => {
+  itemsHint.style.display = splitToggle.checked ? '' : 'none';
+  itemRows.querySelectorAll('.item-row').forEach(row => row.classList.toggle('split-row', splitToggle.checked));
+});
 
 function updateTotal(){
   let total = 0;
@@ -81,11 +102,11 @@ function updateTotal(){
 
 function renderTable(){
   const el = document.getElementById('orderTable');
-  const rows = Store.cache.orders.filter(o => o.source === 'whatsapp').slice().sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,30);
+  const rows = Store.cache.orders.filter(o => o.source === 'whatsapp').slice().sort((a,b) => orderTimestamp(b) - orderTimestamp(a)).slice(0,30);
   if(!rows.length){ el.innerHTML = '<div class="empty">No WhatsApp orders logged yet.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Total</th></tr></thead><tbody>
-    ${rows.map(o => `<tr><td>${o.date||'—'}</td><td>${Store.shopName(o.shopId)}</td><td>${Store.repName(o.repId)}</td><td>${fmtMoney(o.total)}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Delivery</th><th>Total</th></tr></thead><tbody>
+    ${rows.map(o => `<tr><td>${o.date||'—'}</td><td>${Store.shopName(o.shopId)}</td><td>${Store.repName(o.repId)}</td><td>${deliveryPartHtml(o)}</td><td>${fmtMoney(o.total)}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 }
@@ -96,17 +117,37 @@ form.addEventListener('submit', async e => {
   e.preventDefault();
   const f = new FormData(e.target);
   if(!f.get('repId') || !f.get('shopId')){ alert('Add a rep and a shop first (on their own pages) before logging an order.'); return; }
-  const items = Array.from(itemRows.querySelectorAll('.item-row')).map(row => ({
-    designId: row.querySelector('.item-design').value,
-    qty: Number(row.querySelector('.item-qty').value) || 0,
-    price: Number(row.querySelector('.item-price').value) || 0
-  })).filter(it => it.designId && it.qty > 0);
-  if(!items.length){ alert('Add at least one item with a quantity.'); return; }
+
   const btn = form.querySelector('button[type="submit"]');
   btn.disabled = true;
   try{
-    await Store.addOrder(f.get('shopId'), f.get('repId'), 'whatsapp', f.get('date'), items);
-    const designIds = [...new Set(items.map(it => it.designId))];
+    let allDesignIds;
+    if (splitToggle.checked) {
+      const nowItems = [];
+      const remainingItems = [];
+      itemRows.querySelectorAll('.item-row').forEach(row => {
+        const designId = row.querySelector('.item-design').value;
+        const price = Number(row.querySelector('.item-price').value) || 0;
+        const qtyOrdered = Number(row.querySelector('.item-qty').value) || 0;
+        const qtyNow = Math.min(Number(row.querySelector('.item-qty-now').value) || 0, qtyOrdered);
+        const qtyRemaining = qtyOrdered - qtyNow;
+        if (designId && qtyNow > 0) nowItems.push({ designId, qty: qtyNow, price });
+        if (designId && qtyRemaining > 0) remainingItems.push({ designId, qty: qtyRemaining, price });
+      });
+      if (!nowItems.length && !remainingItems.length) { alert('Add at least one item with a quantity.'); btn.disabled = false; return; }
+      await Store.addSplitOrder(f.get('shopId'), f.get('repId'), 'whatsapp', f.get('date'), nowItems, remainingItems);
+      allDesignIds = [...nowItems, ...remainingItems].map(it => it.designId);
+    } else {
+      const items = Array.from(itemRows.querySelectorAll('.item-row')).map(row => ({
+        designId: row.querySelector('.item-design').value,
+        qty: Number(row.querySelector('.item-qty').value) || 0,
+        price: Number(row.querySelector('.item-price').value) || 0
+      })).filter(it => it.designId && it.qty > 0);
+      if(!items.length){ alert('Add at least one item with a quantity.'); btn.disabled = false; return; }
+      await Store.addOrder(f.get('shopId'), f.get('repId'), 'whatsapp', f.get('date'), items);
+      allDesignIds = items.map(it => it.designId);
+    }
+    const designIds = [...new Set(allDesignIds)];
     await Store.addWhatsappSend(f.get('shopId'), f.get('repId'), designIds, f.get('date'));
     e.target.reset();
     document.querySelector('input[name="date"]').value = todayISO();

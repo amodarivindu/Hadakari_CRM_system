@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Users — Hedakari Clothing CRM</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <h1>Users</h1>
+  <p class="subtitle">Create accounts for your reps and staff, and control what each one can do.</p>
+
+  <div id="accessGate"></div>
+
+  <div id="usersContent" style="display:none;">
+    <div class="two-col">
+      <div class="card">
+        <h2>Add a user</h2>
+        <form class="entry-form" id="userForm">
+          <div><label>Email</label><input type="email" name="email" required></div>
+          <div><label>Temporary password</label><input type="password" name="password" placeholder="At least 6 characters" required></div>
+          <div><label>Role</label>
+            <select name="role" required>
+              <option value="viewer">Viewer — can view everything, can't add or edit</option>
+              <option value="worker">Worker — same as Manager, but can't change order status on Orders pages</option>
+              <option value="manager" selected>Manager — can log visits, orders, and shops/reps/designs</option>
+              <option value="admin">Admin — full access, including deleting records and managing users</option>
+            </select>
+          </div>
+          <button type="submit">Create user</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>All users</h2>
+        <div id="usersTable"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { Store, showConnectionError } from './assets/store.js';
+import { renderNav } from './assets/nav.js';
+
+try{
+  await Store.initAuth();
+  renderNav('users.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+}catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
+
+const gate = document.getElementById('accessGate');
+const content = document.getElementById('usersContent');
+
+if (!Store.canManageUsers()) {
+  gate.innerHTML = `<div class="card error-banner"><strong>Admins only.</strong><p>Your account (${Store.currentUserProfile.role}) doesn't have permission to manage users. Ask an admin for access.</p></div>`;
+} else {
+  content.style.display = '';
+
+  async function renderUsers(){
+    const table = document.getElementById('usersTable');
+    let users;
+    try{
+      users = await Store.listUsers();
+    }catch(err){
+      table.innerHTML = `<div class="empty">Could not load users: ${err.message}</div>`;
+      return;
+    }
+    users.sort((a,b) => (a.email||'').localeCompare(b.email||''));
+    if (!users.length){ table.innerHTML = '<div class="empty">No users yet.</div>'; return; }
+
+    table.innerHTML = `
+      <div class="table-scroll"><table><thead><tr><th>Email</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>
+      ${users.map(u => `
+        <tr>
+          <td>${u.email || '—'}</td>
+          <td>
+            <select class="role-select" data-uid="${u.id}" ${u.id === Store.currentUser.uid ? 'disabled' : ''}>
+              <option value="viewer" ${u.role==='viewer'?'selected':''}>Viewer</option>
+              <option value="worker" ${u.role==='worker'?'selected':''}>Worker</option>
+              <option value="manager" ${u.role==='manager'?'selected':''}>Manager</option>
+              <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+            </select>
+          </td>
+          <td>${u.createdAt || '—'}</td>
+          <td class="table-actions">${u.id === Store.currentUser.uid ? '<span class="empty" style="padding:0;">You</span>' : `<button class="small-btn" data-action="save-role" data-uid="${u.id}">Save</button>`}</td>
+        </tr>
+      `).join('')}
+      </tbody></table></div>
+    `;
+
+    table.querySelectorAll('[data-action="save-role"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const uid = btn.dataset.uid;
+        const select = table.querySelector(`.role-select[data-uid="${uid}"]`);
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        try{
+          await Store.updateUserRole(uid, select.value);
+          btn.textContent = 'Saved';
+          setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 1200);
+        }catch(err){
+          alert('Could not update role: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = 'Save';
+        }
+      });
+    });
+  }
+  await renderUsers();
+
+  const form = document.getElementById('userForm');
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    try{
+      await Store.createUser(f.get('email').trim(), f.get('password'), f.get('role'));
+      e.target.reset();
+      await renderUsers();
+      alert('User created. Share the email and temporary password with them directly — they should change the password after first login.');
+    }catch(err){
+      alert('Could not create user: ' + err.message);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = 'Create user';
+    }
+  });
+}
+</script>
+</body>
+</html>

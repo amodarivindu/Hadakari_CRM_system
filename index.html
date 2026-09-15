@@ -8,7 +8,7 @@
 </head>
 <body>
 <main>
-  <h1>Good morning 👋</h1>
+  <h1 id="greeting">Good morning 👋</h1>
   <p class="subtitle" id="todayLine"></p>
 
   <div class="grid stats" id="statTiles"></div>
@@ -40,9 +40,28 @@
 import { Store, Dashboard, fmtMoney, showConnectionError } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 
-renderNav('index.html');
-try{ await Store.refresh(); }
-catch(err){ showConnectionError(err); throw err; }
+try{
+  await Store.initAuth();
+  renderNav('index.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+  await Store.refresh();
+}
+catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
+
+const hour = new Date().getHours();
+const greetingText = hour < 5 ? 'Working late'
+  : hour < 12 ? 'Good morning'
+  : hour < 17 ? 'Good afternoon'
+  : hour < 21 ? 'Good evening'
+  : 'Good night';
+const greetingEmoji = hour < 5 ? '🌙' : hour < 12 ? '👋' : hour < 17 ? '☀️' : hour < 21 ? '🌇' : '🌙';
+document.getElementById('greeting').textContent = `${greetingText} ${greetingEmoji}`;
 
 document.getElementById('todayLine').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 

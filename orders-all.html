@@ -13,6 +13,14 @@
 
   <div class="card" style="margin-bottom:24px;">
     <h2>Orders</h2>
+    <div class="filter-bar order-filters">
+      <select id="orderShopFilter"><option value="">All shops</option></select>
+      <select id="orderSourceFilter"><option value="">All sources</option><option value="visit">Visit</option><option value="whatsapp">WhatsApp</option></select>
+      <select id="orderStatusFilter"><option value="">All statuses</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="completed">Completed</option></select>
+      <div class="filter-date"><span class="filter-date-label">From</span><input id="orderStartDate" type="date" /></div>
+      <div class="filter-date"><span class="filter-date-label">To</span><input id="orderEndDate" type="date" /></div>
+      <button id="exportOrdersBtn" class="small-btn">Export CSV</button>
+    </div>
     <div id="allOrdersTable"></div>
   </div>
 
@@ -24,45 +32,108 @@
 </main>
 
 <script type="module">
-import { Store, Dashboard, fmtMoney, showConnectionError } from './assets/store.js';
+import { Store, Dashboard, fmtMoney, showConnectionError, downloadCsv, orderStatusOf, statusControlHtml, deliveryPartHtml, orderTimestamp } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 
-renderNav('orders-all.html');
-try{ await Store.refresh(); }
-catch(err){ showConnectionError(err); throw err; }
+try{
+  await Store.initAuth();
+  renderNav('orders-all.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+  await Store.refresh();
+}
+catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
+
+const orderShopFilter = document.getElementById('orderShopFilter');
+const orderSourceFilter = document.getElementById('orderSourceFilter');
+const orderStatusFilter = document.getElementById('orderStatusFilter');
+const orderStartDate = document.getElementById('orderStartDate');
+const orderEndDate = document.getElementById('orderEndDate');
+
+orderShopFilter.innerHTML = '<option value="">All shops</option>' +
+  Store.cache.shops.slice().sort((a,b) => a.name.localeCompare(b.name)).map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+
+function getFilteredOrders(){
+  const shopId = orderShopFilter.value;
+  const source = orderSourceFilter.value;
+  const status = orderStatusFilter.value;
+  const start = orderStartDate.value;
+  const end = orderEndDate.value;
+
+  return Store.cache.orders.filter(o => {
+    const matchesShop = !shopId || o.shopId === shopId;
+    const matchesSource = !source || o.source === source;
+    const matchesStatus = !status || orderStatusOf(o) === status;
+    const matchesStart = !start || (o.date || '').localeCompare(start) >= 0;
+    const matchesEnd = !end || (o.date || '').localeCompare(end) <= 0;
+
+    return matchesShop && matchesSource && matchesStatus && matchesStart && matchesEnd;
+  }).sort((a,b) => orderTimestamp(b) - orderTimestamp(a));
+}
 
 function renderOrders(){
   const el = document.getElementById('allOrdersTable');
-  const rows = Store.cache.orders.slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
-  if(!rows.length){ el.innerHTML = '<div class="empty">No orders logged yet.</div>'; return; }
+  const rows = getFilteredOrders();
+  if(!rows.length){ el.innerHTML = '<div class="empty">No orders match the current filters.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Source</th><th>Designs</th><th>Total</th><th>Status</th></tr></thead><tbody>
+    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Source</th><th>Delivery</th><th>Designs</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>
     ${rows.map(o => `<tr>
       <td>${o.date||'—'}</td>
       <td>${Store.shopName(o.shopId)}</td>
       <td>${Store.repName(o.repId)}</td>
       <td>${o.source==='visit'?'Visit':'WhatsApp'}</td>
+      <td>${deliveryPartHtml(o)}</td>
       <td>${(o.items||[]).map(it => `${Store.designCode(it.designId)} ×${it.qty}`).join(', ') || '—'}</td>
       <td>${fmtMoney(o.total)}</td>
-      <td><button class="sent-toggle ${o.sent?'is-sent':'is-pending'}" data-id="${o.id}">${o.sent ? '✓ Completed' : 'Not completed'}</button></td>
+      <td>${statusControlHtml(o, Store.canChangeOrderStatus())}</td>
+      <td class="table-actions">${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-order" data-id="${o.id}">Delete</button>` : ''}</td>
     </tr>`).join('')}
     </tbody></table></div>
   `;
-  el.querySelectorAll('.sent-toggle').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      const order = Store.cache.orders.find(o => o.id === id);
-      btn.disabled = true;
+  el.querySelectorAll('select.status-select').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const id = sel.dataset.id;
+      sel.disabled = true;
       try{
-        await Store.setOrderSent(id, !order.sent);
+        await Store.setOrderStatus(id, sel.value);
         renderOrders();
       }catch(err){
         alert('Could not update status: ' + err.message);
-        btn.disabled = false;
+        sel.disabled = false;
       }
     });
   });
+
+  el.querySelectorAll('[data-action="delete-order"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this order?')) return;
+      try { await Store.deleteOrder(btn.dataset.id); renderOrders(); } catch (err) { alert(err.message); }
+    });
+  });
 }
+
+[orderShopFilter, orderSourceFilter, orderStatusFilter, orderStartDate, orderEndDate].forEach(el => el.addEventListener('input', renderOrders));
+[orderShopFilter, orderSourceFilter, orderStatusFilter].forEach(el => el.addEventListener('change', renderOrders));
+
+document.getElementById('exportOrdersBtn').addEventListener('click', () => {
+  const rows = getFilteredOrders().map(o => ({
+    Date: o.date,
+    Shop: Store.shopName(o.shopId),
+    Rep: Store.repName(o.repId),
+    Source: o.source === 'visit' ? 'Visit' : 'WhatsApp',
+    Delivery: o.deliveryPart === 'now' ? 'Delivering now' : o.deliveryPart === 'remaining' ? 'To be made' : 'Full order',
+    Status: orderStatusOf(o).charAt(0).toUpperCase() + orderStatusOf(o).slice(1),
+    Total: o.total,
+    Designs: (o.items || []).map(it => `${Store.designCode(it.designId)} x${it.qty}`).join(' | ')
+  }));
+  downloadCsv('crm-orders-report.csv', rows);
+});
+
 renderOrders();
 
 function renderNoOrderShops(){

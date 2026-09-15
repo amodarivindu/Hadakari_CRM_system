@@ -24,6 +24,10 @@
     </div>
     <div class="card">
       <h2>All shops</h2>
+      <div class="filter-bar">
+        <input id="shopSearch" type="search" placeholder="Search shop or contact" />
+        <select id="shopAreaFilter"><option value="">All areas</option></select>
+      </div>
       <div id="shopTable"></div>
     </div>
   </div>
@@ -33,20 +37,78 @@
 import { Store, Dashboard, showConnectionError } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 
-renderNav('shops.html');
-try{ await Store.refresh(); }
-catch(err){ showConnectionError(err); throw err; }
+try{
+  await Store.initAuth();
+  renderNav('shops.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+  await Store.refresh();
+}
+catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
+
+const shopSearch = document.getElementById('shopSearch');
+const shopAreaFilter = document.getElementById('shopAreaFilter');
+
+function populateAreaFilter(){
+  const areas = [...new Set(Store.cache.shops.map(s => s.area).filter(Boolean))].sort();
+  shopAreaFilter.innerHTML = '<option value="">All areas</option>' + areas.map(a => `<option value="${a}">${a}</option>`).join('');
+}
+
+function getFilteredShops(){
+  const q = (shopSearch.value || '').toLowerCase();
+  const area = shopAreaFilter.value;
+  return Store.cache.shops.filter(s => {
+    const matchesQuery = !q || [s.name, s.contactName, s.phone, s.area].join(' ').toLowerCase().includes(q);
+    const matchesArea = !area || s.area === area;
+    return matchesQuery && matchesArea;
+  });
+}
 
 function renderTable(){
   const el = document.getElementById('shopTable');
-  if(!Store.cache.shops.length){ el.innerHTML = '<div class="empty">No shops yet.</div>'; return; }
+  const shops = getFilteredShops();
+  if(!shops.length){ el.innerHTML = '<div class="empty">No shops match the current filters.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Contact</th><th>Phone</th><th>Area</th><th>Last activity</th></tr></thead><tbody>
-    ${Store.cache.shops.map(s => `<tr><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td><td>${Dashboard.shopLastActivity(s.id)}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Contact</th><th>Phone</th><th>Area</th><th>Last activity</th><th>Actions</th></tr></thead><tbody>
+    ${shops.map(s => `<tr><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td><td>${Dashboard.shopLastActivity(s.id)}</td><td class="table-actions"><button class="small-btn" data-action="edit-shop" data-id="${s.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-shop" data-id="${s.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
+
+  el.querySelectorAll('[data-action="edit-shop"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const shop = Store.cache.shops.find(s => s.id === btn.dataset.id);
+      if (!shop) return;
+      const name = prompt('Shop name', shop.name); if (name === null) return;
+      const contactName = prompt('Contact name', shop.contactName || ''); if (contactName === null) return;
+      const phone = prompt('Phone', shop.phone || ''); if (phone === null) return;
+      const area = prompt('Area / city', shop.area || ''); if (area === null) return;
+      try {
+        await Store.updateShop(shop.id, { name, contactName, phone, area });
+        renderTable();
+      } catch (err) { alert(err.message); }
+    });
+  });
+
+  el.querySelectorAll('[data-action="delete-shop"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this shop record?')) return;
+      try {
+        await Store.deleteShop(btn.dataset.id);
+        renderTable();
+      } catch (err) { alert(err.message); }
+    });
+  });
 }
+
+shopSearch.addEventListener('input', renderTable);
+shopAreaFilter.addEventListener('change', renderTable);
 renderTable();
+populateAreaFilter();
 
 const form = document.getElementById('shopForm');
 form.addEventListener('submit', async e => {
@@ -58,6 +120,7 @@ form.addEventListener('submit', async e => {
     await Store.addShop(f.get('name').trim(), f.get('contactName').trim(), f.get('phone').trim(), f.get('area').trim());
     e.target.reset();
     renderTable();
+    populateAreaFilter();
   }catch(err){
     alert('Could not add shop: ' + err.message);
   }finally{

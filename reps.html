@@ -22,6 +22,7 @@
     </div>
     <div class="card">
       <h2>All reps</h2>
+      <div class="filter-bar"><input id="repSearch" type="search" placeholder="Search rep by name or phone" /></div>
       <div id="repTable"></div>
     </div>
   </div>
@@ -31,19 +32,56 @@
 import { Store, showConnectionError } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 
-renderNav('reps.html');
-try{ await Store.refresh(); }
-catch(err){ showConnectionError(err); throw err; }
+try{
+  await Store.initAuth();
+  renderNav('reps.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+  await Store.refresh();
+}
+catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
+
+const repSearch = document.getElementById('repSearch');
+
+function getFilteredReps(){
+  const q = (repSearch.value || '').toLowerCase();
+  return Store.cache.reps.filter(r => !q || [r.name, r.phone].join(' ').toLowerCase().includes(q));
+}
 
 function renderTable(){
   const el = document.getElementById('repTable');
-  if(!Store.cache.reps.length){ el.innerHTML = '<div class="empty">No reps yet.</div>'; return; }
+  const reps = getFilteredReps();
+  if(!reps.length){ el.innerHTML = '<div class="empty">No reps match the current search.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Phone</th><th>Added</th></tr></thead><tbody>
-    ${Store.cache.reps.map(r => `<tr><td>${r.name}</td><td>${r.phone||'—'}</td><td>${r.createdAt}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Phone</th><th>Added</th><th>Actions</th></tr></thead><tbody>
+    ${reps.map(r => `<tr><td>${r.name}</td><td>${r.phone||'—'}</td><td>${r.createdAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-rep" data-id="${r.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-rep" data-id="${r.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
+
+  el.querySelectorAll('[data-action="edit-rep"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const rep = Store.cache.reps.find(r => r.id === btn.dataset.id);
+      if (!rep) return;
+      const name = prompt('Rep name', rep.name); if (name === null) return;
+      const phone = prompt('Phone', rep.phone || ''); if (phone === null) return;
+      try { await Store.updateRep(rep.id, { name, phone }); renderTable(); } catch (err) { alert(err.message); }
+    });
+  });
+
+  el.querySelectorAll('[data-action="delete-rep"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this rep record?')) return;
+      try { await Store.deleteRep(btn.dataset.id); renderTable(); } catch (err) { alert(err.message); }
+    });
+  });
 }
+
+repSearch.addEventListener('input', renderTable);
 renderTable();
 
 const form = document.getElementById('repForm');

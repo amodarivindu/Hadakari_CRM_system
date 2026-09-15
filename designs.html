@@ -38,6 +38,7 @@
     </div>
     <div class="card">
       <h2>All designs</h2>
+      <div class="filter-bar"><input id="designSearch" type="search" placeholder="Search design by name or code" /></div>
       <div id="designTable"></div>
     </div>
   </div>
@@ -47,19 +48,57 @@
 import { Store, resizeImageFile, showConnectionError } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 
-renderNav('designs.html');
-try{ await Store.refresh(); }
-catch(err){ showConnectionError(err); throw err; }
+try{
+  await Store.initAuth();
+  renderNav('designs.html');
+  if (!Store.currentUser) {
+    window.location.href = 'login.html';
+    throw new Error('redirecting');
+  }
+  await Store.refresh();
+}
+catch(err){
+  if (err.message !== 'redirecting') showConnectionError(err);
+  throw err;
+}
+
+const designSearch = document.getElementById('designSearch');
+
+function getFilteredDesigns(){
+  const q = (designSearch.value || '').toLowerCase();
+  return Store.cache.designs.filter(d => !q || [d.name, d.code, d.category].join(' ').toLowerCase().includes(q));
+}
 
 function renderTable(){
   const el = document.getElementById('designTable');
-  if(!Store.cache.designs.length){ el.innerHTML = '<div class="empty">No designs yet.</div>'; return; }
+  const designs = getFilteredDesigns().slice().reverse();
+  if(!designs.length){ el.innerHTML = '<div class="empty">No designs match the current search.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Image</th><th>Name</th><th>Code</th><th>Category</th><th>Uploaded</th></tr></thead><tbody>
-    ${Store.cache.designs.slice().reverse().map(d => `<tr><td>${d.imageDataUrl ? `<img src="${d.imageDataUrl}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>Image</th><th>Name</th><th>Code</th><th>Category</th><th>Uploaded</th><th>Actions</th></tr></thead><tbody>
+    ${designs.map(d => `<tr><td>${d.imageDataUrl ? `<img src="${d.imageDataUrl}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-design" data-id="${d.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-design" data-id="${d.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
+
+  el.querySelectorAll('[data-action="edit-design"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const design = Store.cache.designs.find(d => d.id === btn.dataset.id);
+      if (!design) return;
+      const name = prompt('Design name', design.name); if (name === null) return;
+      const code = prompt('Design code', design.code || ''); if (code === null) return;
+      const category = prompt('Category', design.category || ''); if (category === null) return;
+      try { await Store.updateDesign(design.id, { name, code, category, imageDataUrl: design.imageDataUrl }); renderTable(); } catch (err) { alert(err.message); }
+    });
+  });
+
+  el.querySelectorAll('[data-action="delete-design"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this design record?')) return;
+      try { await Store.deleteDesign(btn.dataset.id); renderTable(); } catch (err) { alert(err.message); }
+    });
+  });
 }
+
+designSearch.addEventListener('input', renderTable);
 renderTable();
 
 const imageInput = document.querySelector('input[name="image"]');
