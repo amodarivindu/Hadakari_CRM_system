@@ -47,6 +47,7 @@
 <script type="module">
 import { Store, resizeImageFile, showConnectionError } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
+import { enableImageLightbox } from './assets/lightbox.js';
 
 try{
   await Store.initAuth();
@@ -55,7 +56,7 @@ try{
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh();
+  await Store.refresh(['designs']);
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -75,7 +76,7 @@ function renderTable(){
   if(!designs.length){ el.innerHTML = '<div class="empty">No designs match the current search.</div>'; return; }
   el.innerHTML = `
     <div class="table-scroll"><table><thead><tr><th>Image</th><th>Name</th><th>Code</th><th>Category</th><th>Uploaded</th><th>Actions</th></tr></thead><tbody>
-    ${designs.map(d => `<tr><td>${d.imageDataUrl ? `<img src="${d.imageDataUrl}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-design" data-id="${d.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-design" data-id="${d.id}">Delete</button>` : ''}</td></tr>`).join('')}
+    ${designs.map(d => `<tr><td>${d.imageDataUrl ? `<img class="zoomable-img" src="${d.imageDataUrl}" alt="${d.name || ''}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-design" data-id="${d.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-design" data-id="${d.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 
@@ -100,6 +101,7 @@ function renderTable(){
 
 designSearch.addEventListener('input', renderTable);
 renderTable();
+enableImageLightbox(document.getElementById('designTable'), '.zoomable-img');
 
 const imageInput = document.querySelector('input[name="image"]');
 const imgPreview = document.getElementById('imgPreview');

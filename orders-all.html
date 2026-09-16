@@ -11,6 +11,11 @@
   <h1>All orders</h1>
   <p class="subtitle">Every order from visits and WhatsApp together — mark each one complete once the factory has sent it out.</p>
 
+  <div class="print-header">
+    <h1 style="margin-bottom:2px;">Hedakari Clothing — Orders Report</h1>
+    <p id="printGeneratedAt" style="margin:0;color:#444;"></p>
+  </div>
+
   <div class="card" style="margin-bottom:24px;">
     <h2>Orders</h2>
     <div class="filter-bar order-filters">
@@ -20,11 +25,12 @@
       <div class="filter-date"><span class="filter-date-label">From</span><input id="orderStartDate" type="date" /></div>
       <div class="filter-date"><span class="filter-date-label">To</span><input id="orderEndDate" type="date" /></div>
       <button id="exportOrdersBtn" class="small-btn">Export CSV</button>
+      <button id="printReportBtn" class="small-btn">Print / Save as PDF</button>
     </div>
     <div id="allOrdersTable"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="noOrderShopsCard">
     <h2>Shops with no orders yet</h2>
     <p class="subtitle" style="margin-bottom:14px;">Shops that have never placed an order, from either channel.</p>
     <div id="noOrderShops"></div>
@@ -34,6 +40,7 @@
 <script type="module">
 import { Store, Dashboard, fmtMoney, showConnectionError, downloadCsv, orderStatusOf, statusControlHtml, deliveryPartHtml, orderTimestamp } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
+import { enableImageLightbox } from './assets/lightbox.js';
 
 try{
   await Store.initAuth();
@@ -42,7 +49,7 @@ try{
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh();
+  await Store.refresh(['reps', 'shops', 'designs', 'orders']);
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -88,7 +95,7 @@ function renderOrders(){
       <td>${Store.repName(o.repId)}</td>
       <td>${o.source==='visit'?'Visit':'WhatsApp'}</td>
       <td>${deliveryPartHtml(o)}</td>
-      <td>${(o.items||[]).map(it => `${Store.designCode(it.designId)} ×${it.qty}`).join(', ') || '—'}</td>
+      <td><div class="design-list">${(o.items||[]).map(it => `<span class="design-item">${Store.designThumbHtml(it.designId)}${Store.designCode(it.designId)} ×${it.qty}</span>`).join('') || '—'}</div></td>
       <td>${fmtMoney(o.total)}</td>
       <td>${statusControlHtml(o, Store.canChangeOrderStatus())}</td>
       <td class="table-actions">${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-order" data-id="${o.id}">Delete</button>` : ''}</td>
@@ -132,6 +139,13 @@ document.getElementById('exportOrdersBtn').addEventListener('click', () => {
     Designs: (o.items || []).map(it => `${Store.designCode(it.designId)} x${it.qty}`).join(' | ')
   }));
   downloadCsv('crm-orders-report.csv', rows);
+});
+
+enableImageLightbox(document.getElementById('allOrdersTable'), '.zoomable-img');
+
+document.getElementById('printReportBtn').addEventListener('click', () => {
+  document.getElementById('printGeneratedAt').textContent = 'Generated ' + new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+  window.print();
 });
 
 renderOrders();

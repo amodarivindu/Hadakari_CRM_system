@@ -242,9 +242,10 @@ export const Store = {
     if (!this.canDeleteRecords()) throw new Error('You do not have permission to do that.');
   },
 
-  async refresh(){
-    const snaps = await Promise.all(COLLECTIONS.map(name => getDocs(collection(db, name))));
-    COLLECTIONS.forEach((name, i) => {
+  async refresh(names){
+    const list = names && names.length ? names : COLLECTIONS;
+    const snaps = await Promise.all(list.map(name => getDocs(collection(db, name))));
+    list.forEach((name, i) => {
       this.cache[name] = snaps[i].docs.map(d => ({ id: d.id, ...d.data() }));
     });
     return this.cache;
@@ -454,6 +455,11 @@ export const Store = {
   repName(id){ const r = this.cache.reps.find(x => x.id === id); return (r && r.name) || 'Unknown rep'; },
   designName(id){ const d = this.cache.designs.find(x => x.id === id); return (d && d.name) || 'Unknown design'; },
   designCode(id){ const d = this.cache.designs.find(x => x.id === id); return (d && (d.code || d.name)) || 'Unknown design'; },
+  designThumbHtml(id){
+    const d = this.cache.designs.find(x => x.id === id);
+    if (!d || !d.imageDataUrl) return '';
+    return `<img class="design-thumb zoomable-img" src="${d.imageDataUrl}" alt="${d.name || ''}">`;
+  },
 
 };
 
@@ -464,12 +470,14 @@ export const Dashboard = {
   },
   shopsVisitedYesterday(){
     const y = isoDaysAgo(1);
-    const ids = [...new Set(Store.cache.visits.filter(v => v.date === y).map(v => v.shopId))];
+    const existingShopIds = new Set(Store.cache.shops.map(s => s.id));
+    const ids = [...new Set(Store.cache.visits.filter(v => v.date === y && existingShopIds.has(v.shopId)).map(v => v.shopId))];
     return { count: ids.length, list: ids.map(id => Store.shopName(id)) };
   },
   whatsappSentYesterday(){
     const y = isoDaysAgo(1);
-    const sends = Store.cache.whatsappSends.filter(w => w.date === y);
+    const existingShopIds = new Set(Store.cache.shops.map(s => s.id));
+    const sends = Store.cache.whatsappSends.filter(w => w.date === y && existingShopIds.has(w.shopId));
     const shopCount = new Set(sends.map(s => s.shopId)).size;
     return { count: sends.length, shopCount };
   },

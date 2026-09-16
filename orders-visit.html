@@ -49,7 +49,7 @@ try{
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh();
+  await Store.refresh(['reps', 'shops', 'designs', 'orders']);
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
