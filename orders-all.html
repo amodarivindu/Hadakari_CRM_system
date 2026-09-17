@@ -24,13 +24,12 @@
       <select id="orderStatusFilter"><option value="">All statuses</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="completed">Completed</option></select>
       <div class="filter-date"><span class="filter-date-label">From</span><input id="orderStartDate" type="date" /></div>
       <div class="filter-date"><span class="filter-date-label">To</span><input id="orderEndDate" type="date" /></div>
-      <button id="exportOrdersBtn" class="small-btn">Export CSV</button>
-      <button id="printReportBtn" class="small-btn">Print / Save as PDF</button>
+      <button id="printReportBtn" class="small-btn">Export PDF</button>
     </div>
     <div id="allOrdersTable"></div>
   </div>
 
-  <div class="card" id="noOrderShopsCard">
+  <div class="card print-hide">
     <h2>Shops with no orders yet</h2>
     <p class="subtitle" style="margin-bottom:14px;">Shops that have never placed an order, from either channel.</p>
     <div id="noOrderShops"></div>
@@ -38,18 +37,20 @@
 </main>
 
 <script type="module">
-import { Store, Dashboard, fmtMoney, showConnectionError, downloadCsv, orderStatusOf, statusControlHtml, deliveryPartHtml, orderTimestamp } from './assets/store.js';
+import { Store, Dashboard, fmtMoney, showConnectionError, orderStatusOf, statusControlHtml, deliveryPartHtml, orderTimestamp } from './assets/store.js';
 import { renderNav } from './assets/nav.js';
 import { enableImageLightbox } from './assets/lightbox.js';
 
 try{
   await Store.initAuth();
-  renderNav('orders-all.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh(['reps', 'shops', 'designs', 'orders']);
+  const refreshPromise = Store.refresh(['reps', 'shops', 'designs', 'orders']);
+  await Store.profileReady();
+  renderNav('orders-all.html');
+  await refreshPromise;
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -88,8 +89,9 @@ function renderOrders(){
   const rows = getFilteredOrders();
   if(!rows.length){ el.innerHTML = '<div class="empty">No orders match the current filters.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Source</th><th>Delivery</th><th>Designs</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-    ${rows.map(o => `<tr>
+    <div class="table-scroll"><table><thead><tr><th>#</th><th>Date</th><th>Shop</th><th>Rep</th><th>Source</th><th>Delivery</th><th>Designs</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${rows.map((o,i) => `<tr>
+      <td>${i+1}</td>
       <td>${o.date||'—'}</td>
       <td>${Store.shopName(o.shopId)}</td>
       <td>${Store.repName(o.repId)}</td>
@@ -127,20 +129,6 @@ function renderOrders(){
 [orderShopFilter, orderSourceFilter, orderStatusFilter, orderStartDate, orderEndDate].forEach(el => el.addEventListener('input', renderOrders));
 [orderShopFilter, orderSourceFilter, orderStatusFilter].forEach(el => el.addEventListener('change', renderOrders));
 
-document.getElementById('exportOrdersBtn').addEventListener('click', () => {
-  const rows = getFilteredOrders().map(o => ({
-    Date: o.date,
-    Shop: Store.shopName(o.shopId),
-    Rep: Store.repName(o.repId),
-    Source: o.source === 'visit' ? 'Visit' : 'WhatsApp',
-    Delivery: o.deliveryPart === 'now' ? 'Delivering now' : o.deliveryPart === 'remaining' ? 'To be made' : 'Full order',
-    Status: orderStatusOf(o).charAt(0).toUpperCase() + orderStatusOf(o).slice(1),
-    Total: o.total,
-    Designs: (o.items || []).map(it => `${Store.designCode(it.designId)} x${it.qty}`).join(' | ')
-  }));
-  downloadCsv('crm-orders-report.csv', rows);
-});
-
 enableImageLightbox(document.getElementById('allOrdersTable'), '.zoomable-img');
 
 document.getElementById('printReportBtn').addEventListener('click', () => {
@@ -155,8 +143,8 @@ function renderNoOrderShops(){
   const shops = Dashboard.shopsWithoutOrders();
   if(!shops.length){ el.innerHTML = '<div class="empty">Every shop has placed at least one order.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Shop</th><th>Contact</th><th>Phone</th><th>Area</th></tr></thead><tbody>
-    ${shops.map(s => `<tr><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>#</th><th>Shop</th><th>Contact</th><th>Phone</th><th>Area</th></tr></thead><tbody>
+    ${shops.map((s,i) => `<tr><td>${i+1}</td><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 }

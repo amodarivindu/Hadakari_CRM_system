@@ -111,51 +111,44 @@ export function resizeImageFile(file, maxDim, quality){
   });
 }
 
-export function downloadCsv(filename, rows){
-  const csv = rows.length ? [Object.keys(rows[0]), ...rows.map(r => Object.values(r).map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n') : '';
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
 export const Store = {
   cache: { reps: [], shops: [], designs: [], visits: [], whatsappSends: [], orders: [] },
   currentUser: null,
   currentUserProfile: { role: 'viewer', email: '' },
   authReady: false,
+  _profilePromise: Promise.resolve(),
 
   async initAuth(){
     if (this.authReady) return this.currentUser;
     this.authReady = true;
     return new Promise((resolve) => {
-      onAuthStateChanged(auth, async (user) => {
+      onAuthStateChanged(auth, (user) => {
         this.currentUser = user;
         this.currentUserProfile = { role: 'viewer', email: user?.email || '' };
-
-        if (user) {
-          try {
-            const profileRef = doc(db, 'users', user.uid);
-            const snap = await getDoc(profileRef);
-            if (!snap.exists()) {
-              const defaultRole = 'viewer';
-              await setDoc(profileRef, { uid: user.uid, email: user.email, role: defaultRole, createdAt: todayISO() });
-              this.currentUserProfile = { role: defaultRole, email: user.email };
-            } else {
-              this.currentUserProfile = { ...snap.data(), email: snap.data().email || user.email };
-            }
-          } catch (err) {
-            console.error('Profile load failed:', err);
-          }
-        }
+        this._profilePromise = user ? this._loadProfile(user) : Promise.resolve();
         resolve(user);
       });
     });
+  },
+
+  async _loadProfile(user){
+    try {
+      const profileRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(profileRef);
+      if (!snap.exists()) {
+        const defaultRole = 'viewer';
+        await setDoc(profileRef, { uid: user.uid, email: user.email, role: defaultRole, createdAt: todayISO() });
+        this.currentUserProfile = { role: defaultRole, email: user.email };
+      } else {
+        this.currentUserProfile = { ...snap.data(), email: snap.data().email || user.email };
+      }
+    } catch (err) {
+      console.error('Profile load failed:', err);
+    }
+  },
+
+  async profileReady(){
+    return this._profilePromise;
   },
 
   async login(email, password){

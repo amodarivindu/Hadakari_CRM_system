@@ -45,11 +45,12 @@ import { renderNav } from './assets/nav.js';
 
 try{
   await Store.initAuth();
-  renderNav('users.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
+  await Store.profileReady();
+  renderNav('users.html');
 }catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
   throw err;
@@ -76,9 +77,10 @@ if (!Store.canManageUsers()) {
     if (!users.length){ table.innerHTML = '<div class="empty">No users yet.</div>'; return; }
 
     table.innerHTML = `
-      <div class="table-scroll"><table><thead><tr><th>Email</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>
-      ${users.map(u => `
+      <div class="table-scroll"><table><thead><tr><th>#</th><th>Email</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>
+      ${users.map((u,i) => `
         <tr>
+          <td>${i+1}</td>
           <td>${u.email || '—'}</td>
           <td>
             <select class="role-select" data-uid="${u.id}" ${u.id === Store.currentUser.uid ? 'disabled' : ''}>

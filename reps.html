@@ -34,12 +34,14 @@ import { renderNav } from './assets/nav.js';
 
 try{
   await Store.initAuth();
-  renderNav('reps.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh(['reps']);
+  const refreshPromise = Store.refresh(['reps']);
+  await Store.profileReady();
+  renderNav('reps.html');
+  await refreshPromise;
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -58,8 +60,8 @@ function renderTable(){
   const reps = getFilteredReps();
   if(!reps.length){ el.innerHTML = '<div class="empty">No reps match the current search.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Phone</th><th>Added</th><th>Actions</th></tr></thead><tbody>
-    ${reps.map(r => `<tr><td>${r.name}</td><td>${r.phone||'—'}</td><td>${r.createdAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-rep" data-id="${r.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-rep" data-id="${r.id}">Delete</button>` : ''}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Added</th><th>Actions</th></tr></thead><tbody>
+    ${reps.map((r,i) => `<tr><td>${i+1}</td><td>${r.name}</td><td>${r.phone||'—'}</td><td>${r.createdAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-rep" data-id="${r.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-rep" data-id="${r.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 

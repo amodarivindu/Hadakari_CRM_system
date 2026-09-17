@@ -42,12 +42,14 @@ import { renderNav } from './assets/nav.js';
 
 try{
   await Store.initAuth();
-  renderNav('index.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh();
+  const refreshPromise = Store.refresh();
+  await Store.profileReady();
+  renderNav('index.html');
+  await refreshPromise;
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -113,16 +115,16 @@ rankList(document.getElementById('topDesignsPanel'), Dashboard.topDesigns(7), d 
 const followUp = Dashboard.shopsNeedingFollowUp();
 const followUpEl = document.getElementById('followUpPanel');
 followUpEl.innerHTML = followUp.length ? `
-  <div class="table-scroll"><table><thead><tr><th>Shop</th><th>Area</th><th>Last activity</th></tr></thead><tbody>
-  ${followUp.map(f => `<tr><td>${f.shop.name}</td><td>${f.shop.area||'—'}</td><td><span class="chip warning">${f.daysSince}d ago</span></td></tr>`).join('')}
+  <div class="table-scroll"><table><thead><tr><th>#</th><th>Shop</th><th>Area</th><th>Last activity</th></tr></thead><tbody>
+  ${followUp.map((f,i) => `<tr><td>${i+1}</td><td>${f.shop.name}</td><td>${f.shop.area||'—'}</td><td><span class="chip warning">${f.daysSince}d ago</span></td></tr>`).join('')}
   </tbody></table></div>
 ` : '<div class="empty">All shops have recent activity. Nice work.</div>';
 
 const stale = Dashboard.customersStale();
 const staleEl = document.getElementById('stalePanel');
 staleEl.innerHTML = stale.length ? `
-  <div class="table-scroll"><table><thead><tr><th>Shop</th><th>Area</th><th>Last order</th></tr></thead><tbody>
-  ${stale.map(s => `<tr><td>${s.shop.name}</td><td>${s.shop.area||'—'}</td><td><span class="chip critical">${s.daysSince===null?'Never ordered':s.daysSince+'d ago'}</span></td></tr>`).join('')}
+  <div class="table-scroll"><table><thead><tr><th>#</th><th>Shop</th><th>Area</th><th>Last order</th></tr></thead><tbody>
+  ${stale.map((s,i) => `<tr><td>${i+1}</td><td>${s.shop.name}</td><td>${s.shop.area||'—'}</td><td><span class="chip critical">${s.daysSince===null?'Never ordered':s.daysSince+'d ago'}</span></td></tr>`).join('')}
   </tbody></table></div>
 ` : '<div class="empty">Every customer has ordered within the last 30 days.</div>';
 </script>

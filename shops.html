@@ -11,8 +11,13 @@
   <h1>Shops</h1>
   <p class="subtitle">Your wholesale customers — the shops your reps visit and message.</p>
 
+  <div class="print-header">
+    <h1 style="margin-bottom:2px;">Hedakari Clothing — Shops Report</h1>
+    <p id="printGeneratedAt" style="margin:0;color:#444;"></p>
+  </div>
+
   <div class="two-col">
-    <div class="card">
+    <div class="card print-hide">
       <h2>Add a shop</h2>
       <form class="entry-form" id="shopForm">
         <div><label>Shop name</label><input name="name" required></div>
@@ -27,6 +32,7 @@
       <div class="filter-bar">
         <input id="shopSearch" type="search" placeholder="Search shop or contact" />
         <select id="shopAreaFilter"><option value="">All areas</option></select>
+        <button id="exportShopsBtn" class="small-btn">Export PDF</button>
       </div>
       <div id="shopTable"></div>
     </div>
@@ -39,12 +45,14 @@ import { renderNav } from './assets/nav.js';
 
 try{
   await Store.initAuth();
-  renderNav('shops.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh(['shops', 'visits', 'whatsappSends', 'orders']);
+  const refreshPromise = Store.refresh(['shops', 'visits', 'whatsappSends', 'orders']);
+  await Store.profileReady();
+  renderNav('shops.html');
+  await refreshPromise;
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -74,8 +82,8 @@ function renderTable(){
   const shops = getFilteredShops();
   if(!shops.length){ el.innerHTML = '<div class="empty">No shops match the current filters.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Name</th><th>Contact</th><th>Phone</th><th>Area</th><th>Last activity</th><th>Actions</th></tr></thead><tbody>
-    ${shops.map(s => `<tr><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td><td>${Dashboard.shopLastActivity(s.id)}</td><td class="table-actions"><button class="small-btn" data-action="edit-shop" data-id="${s.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-shop" data-id="${s.id}">Delete</button>` : ''}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>#</th><th>Name</th><th>Contact</th><th>Phone</th><th>Area</th><th>Last activity</th><th>Actions</th></tr></thead><tbody>
+    ${shops.map((s,i) => `<tr><td>${i+1}</td><td>${s.name}</td><td>${s.contactName||'—'}</td><td>${s.phone||'—'}</td><td>${s.area||'—'}</td><td>${Dashboard.shopLastActivity(s.id)}</td><td class="table-actions"><button class="small-btn" data-action="edit-shop" data-id="${s.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-shop" data-id="${s.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 
@@ -109,6 +117,11 @@ shopSearch.addEventListener('input', renderTable);
 shopAreaFilter.addEventListener('change', renderTable);
 renderTable();
 populateAreaFilter();
+
+document.getElementById('exportShopsBtn').addEventListener('click', () => {
+  document.getElementById('printGeneratedAt').textContent = 'Generated ' + new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+  window.print();
+});
 
 const form = document.getElementById('shopForm');
 form.addEventListener('submit', async e => {

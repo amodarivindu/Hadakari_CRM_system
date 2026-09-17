@@ -283,8 +283,8 @@ tr:last-child td{ border-bottom:none; }
 
 .print-header{ display:none; }
 @media print{
-  .topbar, .filter-bar, #exportOrdersBtn, #printReportBtn, .table-actions, .lightbox-overlay, th:last-child, td:last-child,
-  #noOrderShopsCard{ display:none !important; }
+  .topbar, .filter-bar, .table-actions, .lightbox-overlay, .print-hide{ display:none !important; }
+  .two-col{ display:block !important; }
   .status-select{ appearance:none !important; border:1px solid #999 !important; background:#fff !important; color:#000 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   body, main{ background:#fff !important; color:#000 !important; }
   .card{ box-shadow:none !important; border:1px solid #ccc !important; }

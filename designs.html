@@ -11,8 +11,13 @@
   <h1>Designs</h1>
   <p class="subtitle">Your catalog. Log a new design whenever one is finalized and ready to show to shops.</p>
 
+  <div class="print-header">
+    <h1 style="margin-bottom:2px;">Hedakari Clothing — Designs Report</h1>
+    <p id="printGeneratedAt" style="margin:0;color:#444;"></p>
+  </div>
+
   <div class="two-col">
-    <div class="card">
+    <div class="card print-hide">
       <h2>Add a design</h2>
       <form class="entry-form" id="designForm">
         <div><label>Design name</label><input name="name" required></div>
@@ -38,7 +43,7 @@
     </div>
     <div class="card">
       <h2>All designs</h2>
-      <div class="filter-bar"><input id="designSearch" type="search" placeholder="Search design by name or code" /></div>
+      <div class="filter-bar"><input id="designSearch" type="search" placeholder="Search design by name or code" /><button id="exportDesignsBtn" class="small-btn">Export PDF</button></div>
       <div id="designTable"></div>
     </div>
   </div>
@@ -51,12 +56,14 @@ import { enableImageLightbox } from './assets/lightbox.js';
 
 try{
   await Store.initAuth();
-  renderNav('designs.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh(['designs']);
+  const refreshPromise = Store.refresh(['designs']);
+  await Store.profileReady();
+  renderNav('designs.html');
+  await refreshPromise;
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -75,8 +82,8 @@ function renderTable(){
   const designs = getFilteredDesigns().slice().reverse();
   if(!designs.length){ el.innerHTML = '<div class="empty">No designs match the current search.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Image</th><th>Name</th><th>Code</th><th>Category</th><th>Uploaded</th><th>Actions</th></tr></thead><tbody>
-    ${designs.map(d => `<tr><td>${d.imageDataUrl ? `<img class="zoomable-img" src="${d.imageDataUrl}" alt="${d.name || ''}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-design" data-id="${d.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-design" data-id="${d.id}">Delete</button>` : ''}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>#</th><th>Image</th><th>Name</th><th>Code</th><th>Category</th><th>Uploaded</th><th>Actions</th></tr></thead><tbody>
+    ${designs.map((d,i) => `<tr><td>${i+1}</td><td>${d.imageDataUrl ? `<img class="zoomable-img" src="${d.imageDataUrl}" alt="${d.name || ''}" style="width:44px;height:44px;object-fit:cover;border-radius:5px;">` : '<span class="empty" style="padding:0;">—</span>'}</td><td>${d.name}</td><td>${d.code||'—'}</td><td>${d.category||'—'}</td><td>${d.uploadedAt}</td><td class="table-actions"><button class="small-btn" data-action="edit-design" data-id="${d.id}">Edit</button>${Store.canDeleteRecords() ? `<button class="small-btn danger" data-action="delete-design" data-id="${d.id}">Delete</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 
@@ -102,6 +109,11 @@ function renderTable(){
 designSearch.addEventListener('input', renderTable);
 renderTable();
 enableImageLightbox(document.getElementById('designTable'), '.zoomable-img');
+
+document.getElementById('exportDesignsBtn').addEventListener('click', () => {
+  document.getElementById('printGeneratedAt').textContent = 'Generated ' + new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+  window.print();
+});
 
 const imageInput = document.querySelector('input[name="image"]');
 const imgPreview = document.getElementById('imgPreview');

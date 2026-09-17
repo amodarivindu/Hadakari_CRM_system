@@ -11,8 +11,13 @@
   <h1>WhatsApp orders</h1>
   <p class="subtitle">Log an order that came in from a WhatsApp catalog send — this also records the catalog send.</p>
 
+  <div class="print-header">
+    <h1 style="margin-bottom:2px;">Hedakari Clothing — WhatsApp Orders Report</h1>
+    <p id="printGeneratedAt" style="margin:0;color:#444;"></p>
+  </div>
+
   <div class="two-col">
-    <div class="card">
+    <div class="card print-hide">
       <h2>Log a WhatsApp order</h2>
       <form class="entry-form" id="orderForm">
         <div><label>Rep</label><select name="repId" required></select></div>
@@ -32,6 +37,7 @@
     </div>
     <div class="card">
       <h2>Recent WhatsApp orders</h2>
+      <div class="filter-bar"><button id="exportWaOrdersBtn" class="small-btn">Export PDF</button></div>
       <div id="orderTable"></div>
     </div>
   </div>
@@ -43,12 +49,14 @@ import { renderNav } from './assets/nav.js';
 
 try{
   await Store.initAuth();
-  renderNav('orders-whatsapp.html');
   if (!Store.currentUser) {
     window.location.href = 'login.html';
     throw new Error('redirecting');
   }
-  await Store.refresh(['reps', 'shops', 'designs', 'orders']);
+  const refreshPromise = Store.refresh(['reps', 'shops', 'designs', 'orders']);
+  await Store.profileReady();
+  renderNav('orders-whatsapp.html');
+  await refreshPromise;
 }
 catch(err){
   if (err.message !== 'redirecting') showConnectionError(err);
@@ -100,17 +108,26 @@ function updateTotal(){
   document.getElementById('orderTotal').textContent = 'Total: ' + fmtMoney(total);
 }
 
+function getWhatsappOrders(){
+  return Store.cache.orders.filter(o => o.source === 'whatsapp').slice().sort((a,b) => orderTimestamp(b) - orderTimestamp(a));
+}
+
 function renderTable(){
   const el = document.getElementById('orderTable');
-  const rows = Store.cache.orders.filter(o => o.source === 'whatsapp').slice().sort((a,b) => orderTimestamp(b) - orderTimestamp(a)).slice(0,30);
+  const rows = getWhatsappOrders().slice(0,30);
   if(!rows.length){ el.innerHTML = '<div class="empty">No WhatsApp orders logged yet.</div>'; return; }
   el.innerHTML = `
-    <div class="table-scroll"><table><thead><tr><th>Date</th><th>Shop</th><th>Rep</th><th>Delivery</th><th>Total</th></tr></thead><tbody>
-    ${rows.map(o => `<tr><td>${o.date||'—'}</td><td>${Store.shopName(o.shopId)}</td><td>${Store.repName(o.repId)}</td><td>${deliveryPartHtml(o)}</td><td>${fmtMoney(o.total)}</td></tr>`).join('')}
+    <div class="table-scroll"><table><thead><tr><th>#</th><th>Date</th><th>Shop</th><th>Rep</th><th>Delivery</th><th>Total</th></tr></thead><tbody>
+    ${rows.map((o,i) => `<tr><td>${i+1}</td><td>${o.date||'—'}</td><td>${Store.shopName(o.shopId)}</td><td>${Store.repName(o.repId)}</td><td>${deliveryPartHtml(o)}</td><td>${fmtMoney(o.total)}</td></tr>`).join('')}
     </tbody></table></div>
   `;
 }
 renderTable();
+
+document.getElementById('exportWaOrdersBtn').addEventListener('click', () => {
+  document.getElementById('printGeneratedAt').textContent = 'Generated ' + new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+  window.print();
+});
 
 const form = document.getElementById('orderForm');
 form.addEventListener('submit', async e => {
